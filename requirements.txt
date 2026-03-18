@@ -1,0 +1,8 @@
+streamlit>=1.30.0
+anthropic>=0.40.0
+python-pptx>=0.6.21
+pypdf>=4.0.0
+pdfplumber>=0.10.0
+defusedxml>=0.7.1
+Pillow>=10.0.0
+markitdown[pptx]>=0.1.0

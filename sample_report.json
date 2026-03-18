@@ -1,0 +1,57 @@
+{
+  "company": "TechVision AI",
+  "report_title": "Q4 2025 Product Strategy Update",
+  "executive_summary": "TechVision AI achieved remarkable growth in Q4 2025, with revenue increasing 45% year-over-year to $12.8M. Our AI-powered analytics platform now serves 850+ enterprise customers across 32 countries. This report outlines our product roadmap, market positioning, and strategic priorities for 2026.",
+  "key_metrics": {
+    "revenue": "$12.8M (Q4 2025)",
+    "growth_rate": "45% YoY",
+    "customers": "850+ enterprise",
+    "markets": "32 countries",
+    "nps_score": 72,
+    "team_size": 180
+  },
+  "product_updates": [
+    {
+      "name": "VisionAnalytics Pro",
+      "description": "Our flagship real-time analytics platform with predictive modeling capabilities. New features include automated anomaly detection, natural language querying, and custom dashboard builder.",
+      "status": "GA - v3.2 released",
+      "impact": "30% reduction in time-to-insight for customers"
+    },
+    {
+      "name": "DataPipeline AI",
+      "description": "End-to-end data integration platform with AI-assisted ETL. Supports 200+ data connectors and automatic schema detection.",
+      "status": "Beta - launching Q1 2026",
+      "impact": "Expected to reduce data engineering workload by 60%"
+    },
+    {
+      "name": "InsightBot",
+      "description": "Conversational AI assistant for business intelligence. Allows non-technical users to query complex datasets using natural language.",
+      "status": "Alpha testing with 50 pilot customers",
+      "impact": "Democratizing data access across organizations"
+    }
+  ],
+  "market_analysis": {
+    "tam": "$45B by 2027",
+    "competitive_position": "Top 3 in Gartner Magic Quadrant for Analytics",
+    "key_differentiators": [
+      "Real-time processing with sub-second latency",
+      "No-code AI model builder",
+      "Enterprise-grade security (SOC2, HIPAA, GDPR)",
+      "Industry-specific templates and models"
+    ],
+    "target_segments": ["Financial Services", "Healthcare", "Retail", "Manufacturing"]
+  },
+  "2026_priorities": [
+    "Launch DataPipeline AI to general availability",
+    "Expand InsightBot to support 10+ languages",
+    "Achieve FedRAMP certification for government sector",
+    "Open European data center (Frankfurt)",
+    "Grow partner ecosystem to 100+ certified integrators"
+  ],
+  "financial_outlook": {
+    "2026_revenue_target": "$20M ARR",
+    "funding": "Series C - $50M raised in November 2025",
+    "burn_rate": "Sustainable - 18 months runway",
+    "path_to_profitability": "Expected Q3 2027"
+  }
+}
