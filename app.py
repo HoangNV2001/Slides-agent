@@ -277,17 +277,18 @@ elif st.session_state.current_step == 2:
             col_a, col_b = st.columns([2, 1])
 
             with col_a:
-                title = st.text_input(f"Title", value=slide.get("title", ""), key=f"title_{i}")
-                subtitle = st.text_input(f"Subtitle", value=slide.get("subtitle", ""), key=f"sub_{i}")
+                title = st.text_input(f"Title", value=slide.get("title") or "", key=f"title_{i}")
+                subtitle = st.text_input(f"Subtitle", value=slide.get("subtitle") or "", key=f"sub_{i}")
 
-                body = slide.get("body", "")
-                bullets = slide.get("bullet_points", [])
+                body = slide.get("body") or ""
+                bullets = slide.get("bullet_points") or []
                 if bullets and not body:
                     body = "\n".join(f"• {b}" for b in bullets)
-                elif bullets:
+                elif bullets and body:
                     body = body + "\n" + "\n".join(f"• {b}" for b in bullets)
 
                 body_edited = st.text_area(f"Body Content", value=body, height=150, key=f"body_{i}")
+                body_edited = body_edited or ""
 
             with col_b:
                 current_type = slide.get("slide_type", "content")
@@ -309,17 +310,17 @@ elif st.session_state.current_step == 2:
             edited_slides.append({
                 "slide_number": slide.get("slide_number", i + 1),
                 "slide_type": slide_type,
-                "title": title,
-                "subtitle": subtitle,
+                "title": title or "",
+                "subtitle": subtitle or "",
                 "body": body_edited,
                 "bullet_points": [
                     line.lstrip("•-– ").strip()
                     for line in body_edited.split("\n")
                     if line.strip().startswith(("•", "-", "–"))
-                ] or slide.get("bullet_points", []),
-                "visual_suggestion": visual,
-                "speaker_notes": notes,
-                "template_slide_hint": slide.get("template_slide_hint", ""),
+                ] or slide.get("bullet_points") or [],
+                "visual_suggestion": visual or "",
+                "speaker_notes": notes or "",
+                "template_slide_hint": slide.get("template_slide_hint") or "",
             })
 
     st.divider()

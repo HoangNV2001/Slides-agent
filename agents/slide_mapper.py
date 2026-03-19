@@ -4,9 +4,17 @@ Decides which template slide to use for each content slide, generates replacemen
 """
 import json
 import os
+import re
 from typing import Optional
 
 import anthropic
+
+try:
+    from ..utils.json_utils import parse_json_robust as _parse_json_robust
+except ImportError:
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+    from utils.json_utils import parse_json_robust as _parse_json_robust
 
 
 def map_content_to_template(
@@ -17,12 +25,7 @@ def map_content_to_template(
 ) -> dict:
     """
     Map each drafted slide to a template slide layout and generate text replacement instructions.
-
-    Returns:
-        dict with slide_plan: list of {
-            source_slide_index: int (0-based),
-            text_replacements: {old_text: new_text},
-        }
+    Includes retry logic and robust JSON parsing.
     """
     client = anthropic.Anthropic(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"))
 
@@ -54,59 +57,79 @@ Given drafted slide content and a template's slide inventory, you must:
 3. Generate text replacements: map template text to new content.
 4. Title slides map to title layouts, content to bullet layouts, data to chart layouts, etc.
 
-IMPORTANT: The text_replacements keys must EXACTLY match text from the template slide's text_shapes "current_text" field.
-Be very precise with the text matching.
+CRITICAL JSON RULES - you MUST follow these exactly:
+- Output ONLY a valid JSON object. No other text, no explanations.
+- All string values must use double quotes.
+- Escape any double quotes inside string values with backslash.
+- NEVER put raw newlines inside string values. Use \\n instead.
+- No trailing commas after the last item in arrays or objects.
+- The text_replacements keys must EXACTLY match text from the template's text_shapes "current_text" field.
+- Keep replacement text values SHORT and on a single line.
 
-Output ONLY valid JSON (no markdown fences):
-{
-  "slide_plan": [
-    {
-      "draft_slide_number": 1,
-      "source_slide_index": 0,
-      "layout_reason": "Why this template slide was chosen",
-      "text_replacements": {
-        "Exact Original Text": "New replacement text"
-      }
-    }
-  ],
-  "strategy_notes": "Overall mapping strategy explanation"
-}"""
+JSON structure:
+{"slide_plan": [{"draft_slide_number": 1, "source_slide_index": 0, "layout_reason": "reason", "text_replacements": {"Original Text": "New text"}}], "strategy_notes": "notes"}"""
 
-    user_message = f"""Drafted Slides:
-{json.dumps(draft.get("slides", []), indent=2, ensure_ascii=False)}
+    user_message = (
+        "Drafted Slides:\n"
+        + json.dumps(draft.get("slides", []), indent=2, ensure_ascii=True)
+        + "\n\nTemplate Slide Inventory (0-based indices):\n"
+        + json.dumps(template_info, indent=2, ensure_ascii=True)
+        + "\n\nUser instructions: " + (user_instructions or "None")
+        + "\n\nMap each drafted slide to a template slide index and generate replacement instructions."
+        + "\nOutput ONLY valid JSON."
+    )
 
-Template Slide Inventory (0-based indices):
-{json.dumps(template_info, indent=2, ensure_ascii=False)}
+    max_retries = 2
+    last_error = None
+    last_raw = ""
 
-User instructions: {user_instructions or "None"}
+    for attempt in range(max_retries + 1):
+        try:
+            messages = [{"role": "user", "content": user_message}]
 
-Map each drafted slide to a template slide index and generate replacement instructions."""
+            # On retry, send the error as feedback so the model can fix it
+            if attempt > 0 and last_error:
+                messages = [
+                    {"role": "user", "content": user_message},
+                    {"role": "assistant", "content": last_raw[:2000]},
+                    {"role": "user", "content": (
+                        f"Your JSON had a parse error: {last_error}\n"
+                        "Please fix it and output ONLY valid JSON. "
+                        "Make sure all strings are properly escaped, "
+                        "no trailing commas, no raw newlines inside strings."
+                    )},
+                ]
 
-    try:
-        response = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=4096,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_message}],
-        )
+            response = client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=4096,
+                system=system_prompt,
+                messages=messages,
+            )
 
-        response_text = response.content[0].text.strip()
-        if response_text.startswith("```"):
-            response_text = response_text.split("\n", 1)[1]
-            if response_text.endswith("```"):
-                response_text = response_text[:-3]
-            response_text = response_text.strip()
+            response_text = response.content[0].text.strip()
+            last_raw = response_text
 
-        return json.loads(response_text)
+            parsed = _parse_json_robust(response_text)
 
-    except json.JSONDecodeError as e:
-        return {
-            "slide_plan": [],
-            "error": f"JSON parse error: {str(e)}",
-            "raw_response": response_text if 'response_text' in dir() else "",
-        }
-    except Exception as e:
-        return {
-            "slide_plan": [],
-            "error": str(e),
-        }
+            # Validate structure
+            if "slide_plan" not in parsed:
+                parsed = {"slide_plan": parsed.get("slides", []), "strategy_notes": ""}
+
+            return parsed
+
+        except json.JSONDecodeError as e:
+            last_error = str(e)
+            if attempt == max_retries:
+                return {
+                    "slide_plan": [],
+                    "error": f"JSON parse error after {max_retries + 1} attempts: {last_error}",
+                    "raw_response": last_raw[:3000],
+                }
+        except Exception as e:
+            return {
+                "slide_plan": [],
+                "error": str(e),
+            }
+
+    return {"slide_plan": [], "error": "Unexpected error in mapping"}

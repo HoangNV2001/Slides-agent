@@ -4,9 +4,17 @@ Uses Claude API to generate structured slide content.
 """
 import json
 import os
+import re
 from typing import Optional
 
 import anthropic
+
+try:
+    from ..utils.json_utils import sanitize_text as _sanitize_text, parse_json_robust as _parse_json_robust
+except ImportError:
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+    from utils.json_utils import sanitize_text as _sanitize_text, parse_json_robust as _parse_json_robust
 
 
 def draft_slide_content(
@@ -26,6 +34,11 @@ def draft_slide_content(
     """
     client = anthropic.Anthropic(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"))
 
+    # Sanitize inputs
+    document_text = _sanitize_text(document_text or "")
+    template_summary = _sanitize_text(template_summary or "")
+    user_instructions = _sanitize_text(user_instructions or "")
+
     system_prompt = """You are a presentation content strategist. Your job is to analyze a source document and create compelling slide content that will be applied to a PowerPoint template.
 
 Rules:
@@ -36,6 +49,7 @@ Rules:
 5. Include [IMAGE: description] or [CHART: description] or [ICON: description] placeholders where visuals would help.
 6. The first slide should be a title/cover slide.
 7. The last slide can be a summary, CTA, or closing slide.
+8. Use only ASCII-safe characters in your output. Avoid em dashes, smart quotes, or special Unicode characters.
 
 Output ONLY valid JSON (no markdown fences) with this structure:
 {
@@ -45,8 +59,8 @@ Output ONLY valid JSON (no markdown fences) with this structure:
       "slide_number": 1,
       "slide_type": "title|content|comparison|data|quote|section_divider|closing",
       "title": "Slide Title",
-      "subtitle": "Optional subtitle",
-      "body": "Main content - use \\n for line breaks between bullet points",
+      "subtitle": "Optional subtitle or empty string",
+      "body": "Main content - use newline for line breaks between bullet points",
       "bullet_points": ["Point 1", "Point 2", "Point 3"],
       "visual_suggestion": "[IMAGE: description] or [CHART: type - description] or null",
       "speaker_notes": "What the presenter should say",
@@ -55,21 +69,16 @@ Output ONLY valid JSON (no markdown fences) with this structure:
   ]
 }"""
 
-    user_message = f"""Source Document Content:
----
-{document_text[:15000]}
----
-
-Template Structure:
----
-{template_summary}
----
-
-Requirements:
-- Number of slides: {num_slides}
-- Additional instructions: {user_instructions or 'None'}
-
-Please draft the slide content. Remember to output ONLY valid JSON."""
+    user_message = (
+        "Source Document Content:\n---\n"
+        + document_text[:15000]
+        + "\n---\n\nTemplate Structure:\n---\n"
+        + template_summary
+        + "\n---\n\nRequirements:\n"
+        + f"- Number of slides: {num_slides}\n"
+        + f"- Additional instructions: {user_instructions or 'None'}\n\n"
+        + "Please draft the slide content. Remember to output ONLY valid JSON."
+    )
 
     try:
         response = client.messages.create(
@@ -80,20 +89,19 @@ Please draft the slide content. Remember to output ONLY valid JSON."""
         )
 
         response_text = response.content[0].text.strip()
-        # Clean potential markdown fences
-        if response_text.startswith("```"):
-            response_text = response_text.split("\n", 1)[1]
-            if response_text.endswith("```"):
-                response_text = response_text[:-3]
-            response_text = response_text.strip()
 
-        return json.loads(response_text)
+        # Sanitize response before parsing
+        response_text = _sanitize_text(response_text)
+
+        # Robust JSON parsing
+        parsed = _parse_json_robust(response_text)
+        return parsed
 
     except json.JSONDecodeError as e:
         return {
             "outline": "Error parsing AI response",
             "slides": [],
-            "raw_response": response_text,
+            "raw_response": response_text[:3000] if 'response_text' in dir() else "",
             "error": str(e),
         }
     except Exception as e:
@@ -115,18 +123,22 @@ def refine_draft(
 
     system_prompt = """You are a presentation content editor. You will receive a current slide draft and user feedback.
 Update the draft according to the feedback while maintaining quality and coherence.
+Use only ASCII-safe characters. Avoid em dashes, smart quotes, or special Unicode.
 Output ONLY valid JSON with the same structure as the input draft."""
 
-    user_message = f"""Current Draft:
-{json.dumps(current_draft, indent=2, ensure_ascii=False)}
+    draft_json = json.dumps(current_draft, indent=2, ensure_ascii=True)
+    document_text = _sanitize_text(document_text or "")
+    user_feedback = _sanitize_text(user_feedback or "")
 
-User Feedback:
-{user_feedback}
-
-Original Document (for reference):
-{document_text[:8000]}
-
-Please provide the updated draft as JSON only."""
+    user_message = (
+        "Current Draft:\n"
+        + draft_json
+        + "\n\nUser Feedback:\n"
+        + user_feedback
+        + "\n\nOriginal Document (for reference):\n"
+        + document_text[:8000]
+        + "\n\nPlease provide the updated draft as JSON only."
+    )
 
     try:
         response = client.messages.create(
@@ -137,13 +149,8 @@ Please provide the updated draft as JSON only."""
         )
 
         response_text = response.content[0].text.strip()
-        if response_text.startswith("```"):
-            response_text = response_text.split("\n", 1)[1]
-            if response_text.endswith("```"):
-                response_text = response_text[:-3]
-            response_text = response_text.strip()
-
-        return json.loads(response_text)
+        response_text = _sanitize_text(response_text)
+        return _parse_json_robust(response_text)
 
     except Exception as e:
         return {**current_draft, "error": f"Refinement failed: {str(e)}"}
