@@ -92,7 +92,7 @@ with st.sidebar:
     st.markdown("### ⚙️ Configuration")
 
     api_key = st.text_input(
-        "Anthropic API Key",
+        "OpenAI API Key",
         type="password",
         value=st.session_state.api_key or "",
         help="Required for AI content generation",
@@ -177,7 +177,7 @@ if st.session_state.current_step == 0:
     if doc_file and template_file:
         if st.button("🚀 Parse & Analyze", type="primary", use_container_width=True):
             if not st.session_state.api_key:
-                st.error("Please enter your Anthropic API Key in the sidebar.")
+                st.error("Please enter your OpenAI API Key in the sidebar.")
                 st.stop()
 
             with st.spinner("Parsing document..."):

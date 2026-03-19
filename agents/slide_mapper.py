@@ -4,17 +4,24 @@ Decides which template slide to use for each content slide, generates replacemen
 """
 import json
 import os
-import re
 from typing import Optional
-
-import anthropic
 
 try:
     from ..utils.json_utils import parse_json_robust as _parse_json_robust
+    from ..utils.openai_utils import (
+        extract_output_text as _extract_output_text,
+        get_default_model as _get_default_model,
+        get_openai_client as _get_openai_client,
+    )
 except ImportError:
     import sys
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
     from utils.json_utils import parse_json_robust as _parse_json_robust
+    from utils.openai_utils import (
+        extract_output_text as _extract_output_text,
+        get_default_model as _get_default_model,
+        get_openai_client as _get_openai_client,
+    )
 
 
 def map_content_to_template(
@@ -27,7 +34,7 @@ def map_content_to_template(
     Map each drafted slide to a template slide layout and generate text replacement instructions.
     Includes retry logic and robust JSON parsing.
     """
-    client = anthropic.Anthropic(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"))
+    client = _get_openai_client(api_key)
 
     # Build template info
     template_info = []
@@ -85,29 +92,29 @@ JSON structure:
 
     for attempt in range(max_retries + 1):
         try:
-            messages = [{"role": "user", "content": user_message}]
+            prompt_input = user_message
 
             # On retry, send the error as feedback so the model can fix it
             if attempt > 0 and last_error:
-                messages = [
-                    {"role": "user", "content": user_message},
-                    {"role": "assistant", "content": last_raw[:2000]},
-                    {"role": "user", "content": (
+                prompt_input = [
+                    {"role": "user", "content": [{"type": "input_text", "text": user_message}]},
+                    {"role": "assistant", "content": [{"type": "output_text", "text": last_raw[:2000]}]},
+                    {"role": "user", "content": [{"type": "input_text", "text": (
                         f"Your JSON had a parse error: {last_error}\n"
                         "Please fix it and output ONLY valid JSON. "
                         "Make sure all strings are properly escaped, "
                         "no trailing commas, no raw newlines inside strings."
-                    )},
+                    )}]},
                 ]
 
-            response = client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=4096,
-                system=system_prompt,
-                messages=messages,
+            response = client.responses.create(
+                model=_get_default_model(),
+                max_output_tokens=4096,
+                instructions=system_prompt,
+                input=prompt_input,
             )
 
-            response_text = response.content[0].text.strip()
+            response_text = _extract_output_text(response)
             last_raw = response_text
 
             parsed = _parse_json_robust(response_text)

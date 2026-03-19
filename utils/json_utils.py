@@ -1,6 +1,6 @@
 """
 Shared JSON utilities: robust parsing, Unicode sanitization, common error repair.
-Used by all agents that call the Claude API and parse JSON responses.
+Used by all agents that call the LLM API and parse JSON responses.
 """
 import json
 import re

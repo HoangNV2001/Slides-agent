@@ -8,7 +8,8 @@ A multi-agent AI system that generates professional PowerPoint presentations fro
 
 ```bash
 pip install -r requirements.txt
-export ANTHROPIC_API_KEY="sk-ant-..."   # or enter in the app sidebar
+export OPENAI_API_KEY="sk-proj-..."     # or enter in the app sidebar
+export OPENAI_MODEL="gpt-5.4"           # optional, defaults to GPT-5.4
 streamlit run app.py
 ```
 
@@ -56,7 +57,7 @@ streamlit run app.py
    └── Analyze template → structure, text inventory, layouts
 
 2. DRAFT CONTENT (AI Agent)
-   ├── Send document + template summary to Claude API
+   ├── Send document + template summary to OpenAI API
    └── Generate structured slide content (JSON): titles, body, bullets, notes
 
 3. REVIEW & EDIT (Human-in-the-loop)
