@@ -1,5 +1,6 @@
 """
 Document parser: extracts text from PDF, TXT, JSON files.
+Pure Python, no external script dependencies.
 """
 import json
 import os
@@ -10,24 +11,16 @@ def parse_document(file_path: str) -> str:
     ext = os.path.splitext(file_path)[1].lower()
 
     if ext == ".txt":
-        return _parse_txt(file_path)
+        with open(file_path, "r", encoding="utf-8") as f:
+            return f.read()
     elif ext == ".json":
-        return _parse_json(file_path)
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return _json_to_text(data)
     elif ext == ".pdf":
         return _parse_pdf(file_path)
     else:
         raise ValueError(f"Unsupported file type: {ext}. Supported: .pdf, .txt, .json")
-
-
-def _parse_txt(file_path: str) -> str:
-    with open(file_path, "r", encoding="utf-8") as f:
-        return f.read()
-
-
-def _parse_json(file_path: str) -> str:
-    with open(file_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    return _json_to_text(data)
 
 
 def _json_to_text(data, indent=0) -> str:
@@ -54,7 +47,7 @@ def _json_to_text(data, indent=0) -> str:
 
 
 def _parse_pdf(file_path: str) -> str:
-    """Extract text from PDF using pdfplumber (better layout), fallback to pypdf."""
+    """Extract text from PDF. Tries pdfplumber first, falls back to pypdf."""
     try:
         import pdfplumber
         text_parts = []
@@ -68,7 +61,6 @@ def _parse_pdf(file_path: str) -> str:
     except Exception:
         pass
 
-    # Fallback to pypdf
     try:
         from pypdf import PdfReader
         reader = PdfReader(file_path)

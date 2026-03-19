@@ -113,7 +113,7 @@ def refine_draft(
     """Refine the draft based on user feedback."""
     client = anthropic.Anthropic(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"))
 
-    system_prompt = """You are a presentation content editor. You will receive a current slide draft and user feedback. 
+    system_prompt = """You are a presentation content editor. You will receive a current slide draft and user feedback.
 Update the draft according to the feedback while maintaining quality and coherence.
 Output ONLY valid JSON with the same structure as the input draft."""
 

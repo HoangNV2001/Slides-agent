@@ -20,9 +20,8 @@ def map_content_to_template(
 
     Returns:
         dict with slide_plan: list of {
-            source_slide: str,
-            replacements: {old_text: new_text},
-            content: slide content dict
+            source_slide_index: int (0-based),
+            text_replacements: {old_text: new_text},
         }
     """
     client = anthropic.Anthropic(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"))
@@ -32,11 +31,16 @@ def map_content_to_template(
     for slide in template_analysis.get("slides", []):
         slide_desc = {
             "index": slide["index"],
-            "filename": slide["filename"],
+            "layout_name": slide.get("layout_name", "Unknown"),
             "has_images": slide.get("has_images", False),
             "has_charts": slide.get("has_charts", False),
+            "has_tables": slide.get("has_tables", False),
             "text_shapes": [
-                {"shape_name": ts["shape_name"], "current_text": ts["text"][:200]}
+                {
+                    "shape_name": ts["shape_name"],
+                    "current_text": ts["text"][:200],
+                    "is_placeholder": ts.get("is_placeholder", False),
+                }
                 for ts in slide.get("text_shapes", [])
             ],
         }
@@ -45,44 +49,38 @@ def map_content_to_template(
     system_prompt = """You are a presentation builder that maps content to PowerPoint templates.
 
 Given drafted slide content and a template's slide inventory, you must:
-1. For each content slide, choose the BEST matching template slide layout.
+1. For each content slide, choose the BEST matching template slide (by its 0-based index).
 2. VARY the layouts - don't use the same template slide for every content slide.
-3. Generate text replacements: map each template text placeholder to new content.
-4. Consider: title slides map to title layouts, content slides to bullet layouts, data to chart layouts, etc.
+3. Generate text replacements: map template text to new content.
+4. Title slides map to title layouts, content to bullet layouts, data to chart layouts, etc.
+
+IMPORTANT: The text_replacements keys must EXACTLY match text from the template slide's text_shapes "current_text" field.
+Be very precise with the text matching.
 
 Output ONLY valid JSON (no markdown fences):
 {
   "slide_plan": [
     {
       "draft_slide_number": 1,
-      "source_template_slide": "slide1.xml",
-      "source_template_index": 0,
+      "source_slide_index": 0,
       "layout_reason": "Why this template slide was chosen",
       "text_replacements": {
-        "Original Title Text": "New Title Text",
-        "Original body text or placeholder": "New body content"
-      },
-      "notes": "Any special handling needed"
+        "Exact Original Text": "New replacement text"
+      }
     }
   ],
   "strategy_notes": "Overall mapping strategy explanation"
-}
-
-IMPORTANT: The text_replacements keys must EXACTLY match text found in the template slide's text_shapes.
-Be precise with matching - use the exact text from the template."""
+}"""
 
     user_message = f"""Drafted Slides:
 {json.dumps(draft.get("slides", []), indent=2, ensure_ascii=False)}
 
-Template Slide Inventory:
+Template Slide Inventory (0-based indices):
 {json.dumps(template_info, indent=2, ensure_ascii=False)}
-
-Additional markitdown text from template:
-{template_analysis.get("markitdown_text", "")[:5000]}
 
 User instructions: {user_instructions or "None"}
 
-Map each drafted slide to a template slide and generate replacement instructions."""
+Map each drafted slide to a template slide index and generate replacement instructions."""
 
     try:
         response = client.messages.create(

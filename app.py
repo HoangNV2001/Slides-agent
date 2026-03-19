@@ -1,13 +1,12 @@
 """
 AI Slide Builder - Streamlit Demo App
 A multi-agent system for generating presentations from documents + templates.
+Pure Python — runs on any OS (macOS, Linux, Windows). No external scripts.
 """
 import json
 import os
-import shutil
 import sys
 import tempfile
-import time
 
 import streamlit as st
 
@@ -33,24 +32,6 @@ st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
-:root {
-    --primary: #6C5CE7;
-    --primary-light: #A29BFE;
-    --accent: #00CEC9;
-    --bg-dark: #0F0F1A;
-    --bg-card: #1A1A2E;
-    --text: #E4E4F0;
-    --text-muted: #8888AA;
-    --success: #00B894;
-    --warning: #FDCB6E;
-    --danger: #E17055;
-}
-
-.stApp {
-    font-family: 'DM Sans', sans-serif;
-}
-
-/* Header */
 .main-header {
     background: linear-gradient(135deg, #6C5CE7 0%, #0984E3 50%, #00CEC9 100%);
     -webkit-background-clip: text;
@@ -68,78 +49,12 @@ st.markdown("""
     margin-bottom: 2rem;
 }
 
-/* Pipeline Steps */
-.pipeline-step {
-    padding: 1rem 1.2rem;
-    border-radius: 12px;
-    border: 1px solid rgba(108, 92, 231, 0.2);
-    margin-bottom: 0.7rem;
-    transition: all 0.3s ease;
-}
-
-.pipeline-step.active {
-    border-color: #6C5CE7;
-    background: rgba(108, 92, 231, 0.08);
-    box-shadow: 0 0 20px rgba(108, 92, 231, 0.1);
-}
-
-.pipeline-step.done {
-    border-color: #00B894;
-    background: rgba(0, 184, 148, 0.06);
-}
-
-.step-number {
-    display: inline-block;
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    text-align: center;
-    line-height: 28px;
-    font-weight: 700;
-    font-size: 0.85rem;
-    margin-right: 0.6rem;
-}
-
-.step-active .step-number { background: #6C5CE7; color: white; }
-.step-done .step-number { background: #00B894; color: white; }
-.step-pending .step-number { background: #2A2A3E; color: #8888AA; }
-
-/* Slide Card */
-.slide-card {
-    background: rgba(26, 26, 46, 0.6);
-    border: 1px solid rgba(108, 92, 231, 0.15);
-    border-radius: 12px;
-    padding: 1.2rem;
-    margin-bottom: 1rem;
-}
-
-.slide-card h4 {
-    color: #A29BFE;
-    margin-bottom: 0.5rem;
-}
-
-/* Status Badge */
-.status-badge {
-    display: inline-block;
-    padding: 0.2rem 0.7rem;
-    border-radius: 20px;
-    font-size: 0.8rem;
-    font-weight: 500;
-}
-
-.status-success { background: rgba(0,184,148,0.15); color: #00B894; }
-.status-warning { background: rgba(253,203,110,0.15); color: #FDCB6E; }
-.status-error { background: rgba(225,112,85,0.15); color: #E17055; }
-.status-info { background: rgba(108,92,231,0.15); color: #A29BFE; }
-
-/* Log */
 .log-entry {
     font-family: 'JetBrains Mono', monospace;
     font-size: 0.82rem;
     padding: 0.25rem 0;
     color: #8888AA;
 }
-
 .log-entry.success { color: #00B894; }
 .log-entry.warning { color: #FDCB6E; }
 .log-entry.error { color: #E17055; }
@@ -266,7 +181,7 @@ if st.session_state.current_step == 0:
                 st.stop()
 
             with st.spinner("Parsing document..."):
-                # Save uploads
+                # Save uploads to temp dir
                 tmp_dir = tempfile.mkdtemp()
                 doc_path = os.path.join(tmp_dir, doc_file.name)
                 with open(doc_path, "wb") as f:
@@ -276,7 +191,6 @@ if st.session_state.current_step == 0:
                 with open(tpl_path, "wb") as f:
                     f.write(template_file.getvalue())
 
-                # Parse document
                 doc_text = parse_document(doc_path)
                 st.session_state.document_text = doc_text
                 st.session_state.doc_filename = doc_file.name
@@ -301,9 +215,9 @@ if st.session_state.current_step == 0:
 elif st.session_state.current_step == 1:
     st.markdown("## ✍️ Step 2: AI Content Drafting")
 
-    # Show parsed info
     with st.expander("📄 Parsed Document Preview", expanded=False):
-        st.text(st.session_state.document_text[:3000] + ("..." if len(st.session_state.document_text) > 3000 else ""))
+        doc_text = st.session_state.document_text or ""
+        st.text(doc_text[:3000] + ("..." if len(doc_text) > 3000 else ""))
 
     with st.expander("🗂️ Template Structure", expanded=False):
         st.text(st.session_state.template_summary)
@@ -323,6 +237,9 @@ elif st.session_state.current_step == 1:
 
         if draft.get("error"):
             st.error(f"Drafting error: {draft['error']}")
+            if draft.get("raw_response"):
+                with st.expander("Raw AI Response"):
+                    st.code(draft["raw_response"])
         else:
             st.session_state.current_step = 2
             st.rerun()
@@ -349,6 +266,8 @@ elif st.session_state.current_step == 2:
 
     # Editable slides
     edited_slides = []
+    SLIDE_TYPES = ["title", "content", "comparison", "data", "quote", "section_divider", "closing"]
+
     for i, slide in enumerate(slides):
         with st.expander(
             f"Slide {slide.get('slide_number', i+1)}: {slide.get('title', 'Untitled')} "
@@ -358,10 +277,9 @@ elif st.session_state.current_step == 2:
             col_a, col_b = st.columns([2, 1])
 
             with col_a:
-                title = st.text_input(f"Title###{i}", value=slide.get("title", ""), key=f"title_{i}")
-                subtitle = st.text_input(f"Subtitle###{i}", value=slide.get("subtitle", ""), key=f"sub_{i}")
+                title = st.text_input(f"Title", value=slide.get("title", ""), key=f"title_{i}")
+                subtitle = st.text_input(f"Subtitle", value=slide.get("subtitle", ""), key=f"sub_{i}")
 
-                # Body / bullet points
                 body = slide.get("body", "")
                 bullets = slide.get("bullet_points", [])
                 if bullets and not body:
@@ -369,28 +287,23 @@ elif st.session_state.current_step == 2:
                 elif bullets:
                     body = body + "\n" + "\n".join(f"• {b}" for b in bullets)
 
-                body_edited = st.text_area(f"Body Content###{i}", value=body, height=150, key=f"body_{i}")
+                body_edited = st.text_area(f"Body Content", value=body, height=150, key=f"body_{i}")
 
             with col_b:
+                current_type = slide.get("slide_type", "content")
+                type_idx = SLIDE_TYPES.index(current_type) if current_type in SLIDE_TYPES else 1
                 slide_type = st.selectbox(
-                    f"Type###{i}",
-                    ["title", "content", "comparison", "data", "quote", "section_divider", "closing"],
-                    index=["title", "content", "comparison", "data", "quote", "section_divider", "closing"].index(
-                        slide.get("slide_type", "content")
-                    ) if slide.get("slide_type", "content") in ["title", "content", "comparison", "data", "quote", "section_divider", "closing"] else 1,
-                    key=f"type_{i}",
+                    f"Type", SLIDE_TYPES, index=type_idx, key=f"type_{i}",
                 )
                 visual = st.text_area(
-                    f"Visual###{i}",
+                    f"Visual Suggestion",
                     value=slide.get("visual_suggestion", "") or "",
-                    height=80,
-                    key=f"visual_{i}",
+                    height=80, key=f"visual_{i}",
                 )
                 notes = st.text_area(
-                    f"Speaker Notes###{i}",
+                    f"Speaker Notes",
                     value=slide.get("speaker_notes", "") or "",
-                    height=80,
-                    key=f"notes_{i}",
+                    height=80, key=f"notes_{i}",
                 )
 
             edited_slides.append({
@@ -415,7 +328,7 @@ elif st.session_state.current_step == 2:
     st.markdown("### 🔄 AI Refinement (Optional)")
     feedback = st.text_area(
         "Provide feedback to refine the draft",
-        placeholder="e.g., Make slide 3 more concise, add more data points to slide 5, change the tone to be more casual...",
+        placeholder="e.g., Make slide 3 more concise, add more data points to slide 5...",
         height=80,
     )
 
@@ -440,7 +353,6 @@ elif st.session_state.current_step == 2:
 
     with col_proceed:
         if st.button("✅ Approve & Generate Slides", type="primary", use_container_width=True):
-            # Save edited slides
             st.session_state.draft_content = {**draft, "slides": edited_slides}
             st.session_state.current_step = 3
             st.rerun()
@@ -468,9 +380,16 @@ elif st.session_state.current_step == 3:
             if plan.get("raw_response"):
                 with st.expander("Raw AI Response"):
                     st.code(plan["raw_response"])
-            if st.button("← Back to Edit"):
-                st.session_state.current_step = 2
-                st.rerun()
+            col_a, col_b = st.columns(2)
+            with col_a:
+                if st.button("🔄 Retry Mapping"):
+                    st.session_state.slide_plan = None
+                    st.rerun()
+            with col_b:
+                if st.button("← Back to Edit"):
+                    st.session_state.current_step = 2
+                    st.session_state.slide_plan = None
+                    st.rerun()
             st.stop()
 
     # Show mapping plan
@@ -481,15 +400,14 @@ elif st.session_state.current_step == 3:
         for item in plan.get("slide_plan", []):
             st.markdown(
                 f"**Slide {item.get('draft_slide_number')}** → "
-                f"`{item.get('source_template_slide')}` "
-                f"({item.get('layout_reason', '')})"
+                f"template index `{item.get('source_slide_index')}` "
+                f"— {item.get('layout_reason', '')}"
             )
 
     # Phase 2: Generate PPTX
     st.divider()
 
     if not st.session_state.generation_result:
-        log_placeholder = st.empty()
         progress_bar = st.progress(0, text="Starting generation...")
 
         with st.spinner("🔧 Building your presentation..."):
@@ -501,16 +419,16 @@ elif st.session_state.current_step == 3:
                 draft=st.session_state.draft_content,
                 slide_plan=st.session_state.slide_plan,
                 output_path=output_path,
-                work_dir=work_dir,
             )
 
             st.session_state.generation_result = result
-            st.session_state.output_path = output_path if result["status"] == "success" else None
+            if result["status"] == "success":
+                st.session_state.output_path = output_path
 
-        # Show logs
-        steps = result.get("steps", [])
-        for i, step in enumerate(steps):
-            progress_bar.progress((i + 1) / max(len(steps), 1), text=step)
+        # Update progress
+        steps_list = result.get("steps", [])
+        for i, step in enumerate(steps_list):
+            progress_bar.progress((i + 1) / max(len(steps_list), 1), text=step)
 
         st.rerun()
 
@@ -527,7 +445,6 @@ elif st.session_state.current_step == 3:
             else:
                 st.markdown(f'<div class="log-entry">{step}</div>', unsafe_allow_html=True)
 
-        # Warnings
         warnings = result.get("warnings", [])
         if warnings:
             with st.expander(f"⚠️ {len(warnings)} Warnings", expanded=False):
@@ -571,7 +488,6 @@ elif st.session_state.current_step == 4:
         col1, col2 = st.columns([2, 1])
 
         with col1:
-            # Download button
             with open(output_path, "rb") as f:
                 pptx_data = f.read()
 
@@ -590,7 +506,7 @@ elif st.session_state.current_step == 4:
             file_size = len(pptx_data) / 1024
             st.metric("File Size", f"{file_size:.1f} KB")
 
-        # Show summary
+        # Summary
         st.divider()
         st.markdown("### 📊 Generation Summary")
 
@@ -603,26 +519,21 @@ elif st.session_state.current_step == 4:
             num = len(st.session_state.draft_content.get("slides", []))
             st.metric("Slides Generated", num)
 
-        # Show final content
+        # Final content
         with st.expander("📝 Final Slide Content"):
             for slide in st.session_state.draft_content.get("slides", []):
                 st.markdown(f"**Slide {slide.get('slide_number', '?')}: {slide.get('title', 'Untitled')}**")
                 st.markdown(f"_{slide.get('slide_type', 'content')}_")
                 body = slide.get("body", "")
-                bullets = slide.get("bullet_points", [])
                 if body:
                     st.text(body)
-                if bullets:
-                    for b in bullets:
-                        st.markdown(f"  • {b}")
                 st.divider()
 
-        # Validation text
+        # Validation
         if result and result.get("validation_text"):
-            with st.expander("🔍 Output Validation (markitdown)"):
+            with st.expander("🔍 Output Validation"):
                 st.text(result["validation_text"])
 
-        # Warnings
         warnings = result.get("warnings", []) if result else []
         if warnings:
             with st.expander(f"⚠️ {len(warnings)} Warnings"):
