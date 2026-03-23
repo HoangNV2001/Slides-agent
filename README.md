@@ -8,7 +8,6 @@ A multi-agent AI system that generates professional PowerPoint presentations fro
 
 ```bash
 pip install -r requirements.txt
-export OPENAI_API_KEY="sk-proj-..."     # or enter in the app sidebar
 export OPENAI_MODEL="gpt-5.4"           # optional, defaults to GPT-5.4
 streamlit run app.py
 ```
