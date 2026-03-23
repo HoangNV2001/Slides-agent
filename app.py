@@ -13,7 +13,7 @@ import streamlit as st
 # Add project to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from utils.document_parser import parse_document
+from utils.document_parser import parse_document_bundle
 from utils.template_analyzer import analyze_template, get_template_summary
 from agents.content_drafter import draft_slide_content, refine_draft
 from agents.slide_mapper import map_content_to_template
@@ -67,6 +67,7 @@ def init_session():
     defaults = {
         "current_step": 0,  # 0=upload, 1=draft, 2=review, 3=generate, 4=done
         "document_text": None,
+        "document_images": [],
         "template_analysis": None,
         "template_summary": None,
         "draft_content": None,
@@ -164,14 +165,12 @@ if st.session_state.current_step == 0:
 
     st.divider()
 
-    num_slides = st.slider("Number of slides to generate", min_value=3, max_value=30, value=8)
     user_instructions = st.text_area(
         "Additional instructions (optional)",
         placeholder="e.g., Focus on the financial data, make it suitable for C-level audience, include a Q&A slide...",
         height=80,
     )
 
-    st.session_state["num_slides"] = num_slides
     st.session_state["user_instructions"] = user_instructions
 
     if doc_file and template_file:
@@ -191,8 +190,9 @@ if st.session_state.current_step == 0:
                 with open(tpl_path, "wb") as f:
                     f.write(template_file.getvalue())
 
-                doc_text = parse_document(doc_path)
-                st.session_state.document_text = doc_text
+                doc_bundle = parse_document_bundle(doc_path, asset_dir=os.path.join(tmp_dir, "doc_assets"))
+                st.session_state.document_text = doc_bundle.get("text", "")
+                st.session_state.document_images = doc_bundle.get("images", [])
                 st.session_state.doc_filename = doc_file.name
 
             with st.spinner("Analyzing template structure..."):
@@ -219,6 +219,9 @@ elif st.session_state.current_step == 1:
         doc_text = st.session_state.document_text or ""
         st.text(doc_text[:3000] + ("..." if len(doc_text) > 3000 else ""))
 
+    if st.session_state.get("document_images"):
+        st.caption(f"Extracted {len(st.session_state['document_images'])} image(s) from the source document.")
+
     with st.expander("🗂️ Template Structure", expanded=False):
         st.text(st.session_state.template_summary)
 
@@ -229,7 +232,7 @@ elif st.session_state.current_step == 1:
             draft = draft_slide_content(
                 document_text=st.session_state.document_text,
                 template_summary=st.session_state.template_summary,
-                num_slides=st.session_state.get("num_slides", 8),
+                document_images=st.session_state.get("document_images", []),
                 user_instructions=st.session_state.get("user_instructions", ""),
                 api_key=st.session_state.api_key,
             )
@@ -319,6 +322,7 @@ elif st.session_state.current_step == 2:
                     if line.strip().startswith(("•", "-", "–"))
                 ] or slide.get("bullet_points") or [],
                 "visual_suggestion": visual or "",
+                "source_image_ids": slide.get("source_image_ids") or [],
                 "speaker_notes": notes or "",
                 "template_slide_hint": slide.get("template_slide_hint") or "",
             })
@@ -420,6 +424,7 @@ elif st.session_state.current_step == 3:
                 draft=st.session_state.draft_content,
                 slide_plan=st.session_state.slide_plan,
                 output_path=output_path,
+                document_images=st.session_state.get("document_images", []),
             )
 
             st.session_state.generation_result = result
@@ -451,6 +456,21 @@ elif st.session_state.current_step == 3:
             with st.expander(f"⚠️ {len(warnings)} Warnings", expanded=False):
                 for w in warnings:
                     st.warning(w)
+
+        review_report = result.get("review_report", [])
+        if review_report:
+            with st.expander(f"🛠️ Slide Review ({len(review_report)} slides)", expanded=False):
+                for review in review_report:
+                    slide_no = review.get("slide_number", "?")
+                    actions = review.get("actions", [])
+                    issues = review.get("issues", [])
+                    if actions:
+                        st.markdown(f"**Slide {slide_no}**")
+                        for action in actions:
+                            st.write(f"• {action}")
+                    if issues:
+                        for issue in issues:
+                            st.warning(f"Slide {slide_no}: {issue}")
 
         if result["status"] == "success":
             st.success("🎉 Presentation generated successfully!")
@@ -540,6 +560,21 @@ elif st.session_state.current_step == 4:
             with st.expander(f"⚠️ {len(warnings)} Warnings"):
                 for w in warnings:
                     st.warning(w)
+
+        review_report = result.get("review_report", []) if result else []
+        if review_report:
+            with st.expander(f"🛠️ Slide Review ({len(review_report)} slides)"):
+                for review in review_report:
+                    slide_no = review.get("slide_number", "?")
+                    actions = review.get("actions", [])
+                    issues = review.get("issues", [])
+                    if actions:
+                        st.markdown(f"**Slide {slide_no}**")
+                        for action in actions:
+                            st.write(f"• {action}")
+                    if issues:
+                        for issue in issues:
+                            st.warning(f"Slide {slide_no}: {issue}")
 
         st.divider()
         col_new, col_redo = st.columns(2)

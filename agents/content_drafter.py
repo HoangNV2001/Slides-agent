@@ -27,7 +27,7 @@ except ImportError:
 def draft_slide_content(
     document_text: str,
     template_summary: str,
-    num_slides: int,
+    document_images: Optional[list] = None,
     user_instructions: str = "",
     api_key: Optional[str] = None,
 ) -> dict:
@@ -45,18 +45,26 @@ def draft_slide_content(
     document_text = _sanitize_text(document_text or "")
     template_summary = _sanitize_text(template_summary or "")
     user_instructions = _sanitize_text(user_instructions or "")
+    document_images = document_images or []
 
     system_prompt = """You are a presentation content strategist. Your job is to analyze a source document and create compelling slide content that will be applied to a PowerPoint template.
 
 Rules:
-1. Create EXACTLY the number of slides requested.
-2. Each slide must have: title, body content, speaker notes, and visual suggestions.
-3. Vary slide types: use title slides, content slides, comparison slides, data slides, quote/highlight slides, section dividers.
-4. Keep text concise - slides should have bullet points or short phrases, not paragraphs.
-5. Include [IMAGE: description] or [CHART: description] or [ICON: description] placeholders where visuals would help.
-6. The first slide should be a title/cover slide.
-7. The last slide can be a summary, CTA, or closing slide.
-8. Use only ASCII-safe characters in your output. Avoid em dashes, smart quotes, or special Unicode characters.
+1. Decide an APPROPRIATE number of slides based on the source document and user instructions.
+2. Aim for a concise but complete deck. In most cases, choose between 5 and 12 slides unless the material clearly justifies more or fewer.
+3. Each slide must have: title, body content, speaker notes, and visual suggestions.
+4. Vary slide types: use title slides, content slides, comparison slides, data slides, quote/highlight slides, section dividers.
+5. Keep text concise - slides should have bullet points or short phrases, not paragraphs.
+6. Optimize for slide fit: prefer 3-5 bullet points per slide, keep each bullet short, and avoid long titles or subtitles.
+7. Include [IMAGE: description] or [CHART: description] or [ICON: description] placeholders where visuals would help.
+8. The first slide should be a title/cover slide.
+9. The last slide can be a summary, CTA, or closing slide.
+10. Preserve the original language of the requested content.
+11. If the content is in Vietnamese, keep full Vietnamese diacritics exactly as normal natural Vietnamese writing.
+12. Avoid typographic punctuation that often breaks JSON formatting, such as smart quotes or em dashes.
+13. If relevant source document images are available, assign them to suitable slides using source_image_ids.
+14. Only assign an image when its caption or nearby text clearly matches the slide topic. Do not assign images arbitrarily.
+15. If a point would make the slide crowded, split it into another slide or compress it into a shorter phrase.
 
 Output ONLY valid JSON (no markdown fences) with this structure:
 {
@@ -70,6 +78,7 @@ Output ONLY valid JSON (no markdown fences) with this structure:
       "body": "Main content - use newline for line breaks between bullet points",
       "bullet_points": ["Point 1", "Point 2", "Point 3"],
       "visual_suggestion": "[IMAGE: description] or [CHART: type - description] or null",
+      "source_image_ids": ["img_1"],
       "speaker_notes": "What the presenter should say",
       "template_slide_hint": "Which template slide layout would work best"
     }
@@ -81,8 +90,22 @@ Output ONLY valid JSON (no markdown fences) with this structure:
         + document_text[:15000]
         + "\n---\n\nTemplate Structure:\n---\n"
         + template_summary
+        + "\n---\n\nAvailable Source Images:\n---\n"
+        + json.dumps(
+            [
+                {
+                    "id": image.get("id"),
+                    "page": image.get("page"),
+                    "caption": image.get("caption"),
+                    "nearby_text": image.get("nearby_text", "")[:240],
+                    "context_keywords": image.get("context_keywords", []),
+                }
+                for image in document_images[:20]
+            ],
+            indent=2,
+            ensure_ascii=False,
+        )
         + "\n---\n\nRequirements:\n"
-        + f"- Number of slides: {num_slides}\n"
         + f"- Additional instructions: {user_instructions or 'None'}\n\n"
         + "Please draft the slide content. Remember to output ONLY valid JSON."
     )
@@ -130,10 +153,11 @@ def refine_draft(
 
     system_prompt = """You are a presentation content editor. You will receive a current slide draft and user feedback.
 Update the draft according to the feedback while maintaining quality and coherence.
-Use only ASCII-safe characters. Avoid em dashes, smart quotes, or special Unicode.
+Preserve the original language of the draft. If the content is in Vietnamese, keep full Vietnamese diacritics exactly.
+Avoid typographic punctuation that often breaks JSON formatting, such as smart quotes or em dashes.
 Output ONLY valid JSON with the same structure as the input draft."""
 
-    draft_json = json.dumps(current_draft, indent=2, ensure_ascii=True)
+    draft_json = json.dumps(current_draft, indent=2, ensure_ascii=False)
     document_text = _sanitize_text(document_text or "")
     user_feedback = _sanitize_text(user_feedback or "")
 

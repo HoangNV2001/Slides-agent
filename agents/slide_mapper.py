@@ -38,20 +38,27 @@ def map_content_to_template(
 
     # Build template info
     template_info = []
-    for slide in template_analysis.get("slides", []):
+    source_slides = template_analysis.get("mapping_slides") or template_analysis.get("slides", [])
+    for slide in source_slides:
+        simplified = slide.get("simplified_layout", {})
         slide_desc = {
             "index": slide["index"],
             "layout_name": slide.get("layout_name", "Unknown"),
+            "layout_kind": simplified.get("layout_kind", "unknown"),
+            "title_slots": simplified.get("title_slots", 0),
+            "body_slots": simplified.get("body_slots", 0),
+            "image_slots": simplified.get("image_slots", 0),
             "has_images": slide.get("has_images", False),
             "has_charts": slide.get("has_charts", False),
             "has_tables": slide.get("has_tables", False),
-            "text_shapes": [
+            "text_slots": [
                 {
                     "shape_name": ts["shape_name"],
-                    "current_text": ts["text"][:200],
-                    "is_placeholder": ts.get("is_placeholder", False),
+                    "role": ts.get("role", "body"),
+                    "current_text": ts["text_preview"][:200],
                 }
-                for ts in slide.get("text_shapes", [])
+                for ts in simplified.get("slots", [])
+                if ts.get("role") != "image"
             ],
         }
         template_info.append(slide_desc)
@@ -61,8 +68,9 @@ def map_content_to_template(
 Given drafted slide content and a template's slide inventory, you must:
 1. For each content slide, choose the BEST matching template slide (by its 0-based index).
 2. VARY the layouts - don't use the same template slide for every content slide.
-3. Generate text replacements: map template text to new content.
+3. Generate text replacements only as a light hint. The builder will place content dynamically into detected title/body/image slots.
 4. Title slides map to title layouts, content to bullet layouts, data to chart layouts, etc.
+5. Prefer the simplified layout information (layout_kind, title_slots, body_slots, image_slots) over raw placeholder text.
 
 CRITICAL JSON RULES - you MUST follow these exactly:
 - Output ONLY a valid JSON object. No other text, no explanations.
@@ -70,17 +78,18 @@ CRITICAL JSON RULES - you MUST follow these exactly:
 - Escape any double quotes inside string values with backslash.
 - NEVER put raw newlines inside string values. Use \\n instead.
 - No trailing commas after the last item in arrays or objects.
-- The text_replacements keys must EXACTLY match text from the template's text_shapes "current_text" field.
+- The text_replacements keys must EXACTLY match text from the template's text_slots "current_text" field.
 - Keep replacement text values SHORT and on a single line.
+- Preserve Unicode text exactly as intended. If the content is Vietnamese, keep full Vietnamese diacritics.
 
 JSON structure:
 {"slide_plan": [{"draft_slide_number": 1, "source_slide_index": 0, "layout_reason": "reason", "text_replacements": {"Original Text": "New text"}}], "strategy_notes": "notes"}"""
 
     user_message = (
         "Drafted Slides:\n"
-        + json.dumps(draft.get("slides", []), indent=2, ensure_ascii=True)
+        + json.dumps(draft.get("slides", []), indent=2, ensure_ascii=False)
         + "\n\nTemplate Slide Inventory (0-based indices):\n"
-        + json.dumps(template_info, indent=2, ensure_ascii=True)
+        + json.dumps(template_info, indent=2, ensure_ascii=False)
         + "\n\nUser instructions: " + (user_instructions or "None")
         + "\n\nMap each drafted slide to a template slide index and generate replacement instructions."
         + "\nOutput ONLY valid JSON."

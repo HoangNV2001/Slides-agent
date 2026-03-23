@@ -19,6 +19,7 @@ def generate_slides(
     draft: dict,
     slide_plan: dict,
     output_path: str,
+    document_images: Optional[list] = None,
     work_dir: str = None,
 ) -> dict:
     """
@@ -41,9 +42,11 @@ def generate_slides(
         "output_path": output_path,
         "steps": [],
         "warnings": [],
+        "review_report": [],
     }
 
     try:
+        document_images = document_images or []
         # Parse the slide plan from the mapper
         plan_items = slide_plan.get("slide_plan", [])
         if not plan_items:
@@ -55,14 +58,22 @@ def generate_slides(
 
         # Convert mapper output to builder format
         builder_plan = []
+        draft_slides = draft.get("slides", []) or []
         for item in plan_items:
+            draft_slide_number = item.get("draft_slide_number", 0)
+            draft_slide = next(
+                (slide for slide in draft_slides if slide.get("slide_number") == draft_slide_number),
+                draft_slides[draft_slide_number - 1] if 0 < draft_slide_number <= len(draft_slides) else {},
+            )
             builder_item = {
                 "source_slide_index": item.get("source_slide_index", 0),
                 "text_replacements": item.get("text_replacements", {}),
+                "draft_content": draft_slide or {},
+                "document_images": document_images,
             }
             builder_plan.append(builder_item)
             result["steps"].append(
-                f"  Slide {item.get('draft_slide_number', '?')}: "
+                f"  Slide {draft_slide_number or '?'}: "
                 f"template[{builder_item['source_slide_index']}] "
                 f"({item.get('layout_reason', 'no reason')})"
             )
@@ -78,6 +89,7 @@ def generate_slides(
         # Merge build results
         result["steps"].extend(build_result.get("steps", []))
         result["warnings"].extend(build_result.get("warnings", []))
+        result["review_report"] = build_result.get("review_report", [])
         result["status"] = build_result.get("status", "error")
         result["validation_text"] = build_result.get("validation_text", "")
 

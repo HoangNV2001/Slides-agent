@@ -3,7 +3,7 @@ Utility modules for the AI Slide Builder.
 Pure Python — no external script dependencies. Runs on any OS.
 """
 
-from .document_parser import parse_document
+from .document_parser import parse_document, parse_document_bundle
 from .template_analyzer import analyze_template, get_template_summary
 from .pptx_builder import (
     build_presentation_from_plan,
@@ -16,6 +16,7 @@ from .pptx_builder import (
 
 __all__ = [
     "parse_document",
+    "parse_document_bundle",
     "analyze_template",
     "get_template_summary",
     "build_presentation_from_plan",
