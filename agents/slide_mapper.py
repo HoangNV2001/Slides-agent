@@ -41,6 +41,7 @@ def map_content_to_template(
     source_slides = template_analysis.get("mapping_slides") or template_analysis.get("slides", [])
     for slide in source_slides:
         simplified = slide.get("simplified_layout", {})
+        visual = slide.get("visual_layout", {})
         slide_desc = {
             "index": slide["index"],
             "layout_name": slide.get("layout_name", "Unknown"),
@@ -48,6 +49,23 @@ def map_content_to_template(
             "title_slots": simplified.get("title_slots", 0),
             "body_slots": simplified.get("body_slots", 0),
             "image_slots": simplified.get("image_slots", 0),
+            "visual_layout": {
+                "layout_family": visual.get("layout_family", "unknown"),
+                "column_count": visual.get("column_count", 0),
+                "image_alignment": visual.get("image_alignment", "none"),
+                "emphasis": visual.get("emphasis", "balanced"),
+                "reading_order": visual.get("reading_order", [])[:8],
+                "slot_map": [
+                    {
+                        "shape_name": slot.get("shape_name"),
+                        "role": slot.get("role"),
+                        "band": slot.get("geometry", {}).get("vertical_band"),
+                        "zone": slot.get("geometry", {}).get("horizontal_zone"),
+                        "area_ratio": slot.get("geometry", {}).get("area_ratio"),
+                    }
+                    for slot in visual.get("slot_map", [])[:8]
+                ],
+            },
             "has_images": slide.get("has_images", False),
             "has_charts": slide.get("has_charts", False),
             "has_tables": slide.get("has_tables", False),
@@ -71,6 +89,14 @@ Given drafted slide content and a template's slide inventory, you must:
 3. Generate text replacements only as a light hint. The builder will place content dynamically into detected title/body/image slots.
 4. Title slides map to title layouts, content to bullet layouts, data to chart layouts, etc.
 5. Prefer the simplified layout information (layout_kind, title_slots, body_slots, image_slots) over raw placeholder text.
+6. Use visual_layout heavily. Match not only content type, but the actual composition:
+   - image_alignment for image-led slides
+   - column_count for comparison/multi-point slides
+   - emphasis for title-heavy vs content-heavy vs visual-heavy slides
+   - slot_map and reading_order for where content will actually land
+7. Treat template_slide_hint from the drafted slide as a soft hint, not a final answer.
+8. Avoid mapping a dense slide to a visually sparse layout unless the draft is very short.
+9. If a slide has source_image_ids or an [IMAGE: ...] suggestion, prefer layouts with image slots and matching visual balance.
 
 CRITICAL JSON RULES - you MUST follow these exactly:
 - Output ONLY a valid JSON object. No other text, no explanations.
@@ -92,6 +118,7 @@ JSON structure:
         + json.dumps(template_info, indent=2, ensure_ascii=False)
         + "\n\nUser instructions: " + (user_instructions or "None")
         + "\n\nMap each drafted slide to a template slide index and generate replacement instructions."
+        + "\nPrioritize real visual fit, not just generic slide type matching."
         + "\nOutput ONLY valid JSON."
     )
 

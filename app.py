@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from utils.document_parser import parse_document_bundle
 from utils.template_analyzer import analyze_template, get_template_summary
-from agents.content_drafter import draft_slide_content, refine_draft
+from agents.content_drafter import draft_slide_content, refine_draft, review_mapped_draft
 from agents.slide_mapper import map_content_to_template
 from agents.slide_generator import generate_slides
 
@@ -72,6 +72,7 @@ def init_session():
         "template_summary": None,
         "draft_content": None,
         "slide_plan": None,
+        "layout_review_result": None,
         "generation_result": None,
         "output_path": None,
         "api_key": None,
@@ -325,6 +326,7 @@ elif st.session_state.current_step == 2:
                 "source_image_ids": slide.get("source_image_ids") or [],
                 "speaker_notes": notes or "",
                 "template_slide_hint": slide.get("template_slide_hint") or "",
+                "layout_review_note": slide.get("layout_review_note") or "",
             })
 
     st.divider()
@@ -352,6 +354,9 @@ elif st.session_state.current_step == 2:
                     )
                     if not refined.get("error"):
                         st.session_state.draft_content = refined
+                        st.session_state.slide_plan = None
+                        st.session_state.layout_review_result = None
+                        st.session_state.generation_result = None
                         st.rerun()
                     else:
                         st.error(f"Refinement error: {refined['error']}")
@@ -359,6 +364,9 @@ elif st.session_state.current_step == 2:
     with col_proceed:
         if st.button("✅ Approve & Generate Slides", type="primary", use_container_width=True):
             st.session_state.draft_content = {**draft, "slides": edited_slides}
+            st.session_state.slide_plan = None
+            st.session_state.layout_review_result = None
+            st.session_state.generation_result = None
             st.session_state.current_step = 3
             st.rerun()
 
@@ -389,13 +397,31 @@ elif st.session_state.current_step == 3:
             with col_a:
                 if st.button("🔄 Retry Mapping"):
                     st.session_state.slide_plan = None
+                    st.session_state.layout_review_result = None
                     st.rerun()
             with col_b:
                 if st.button("← Back to Edit"):
                     st.session_state.current_step = 2
                     st.session_state.slide_plan = None
+                    st.session_state.layout_review_result = None
                     st.rerun()
             st.stop()
+
+        with st.spinner("🪄 Refining draft for the selected layouts..."):
+            reviewed = review_mapped_draft(
+                current_draft=st.session_state.draft_content,
+                slide_plan=st.session_state.slide_plan,
+                template_analysis=st.session_state.template_analysis,
+                document_text=st.session_state.document_text,
+                user_feedback=st.session_state.get("user_instructions", ""),
+                api_key=st.session_state.api_key,
+            )
+            st.session_state.layout_review_result = reviewed
+            if not reviewed.get("error"):
+                st.session_state.draft_content = {
+                    **st.session_state.draft_content,
+                    **{key: value for key, value in reviewed.items() if key in {"outline", "slides", "review_summary"}},
+                }
 
     # Show mapping plan
     plan = st.session_state.slide_plan
@@ -408,6 +434,20 @@ elif st.session_state.current_step == 3:
                 f"template index `{item.get('source_slide_index')}` "
                 f"— {item.get('layout_reason', '')}"
             )
+
+    layout_review = st.session_state.layout_review_result or {}
+    if layout_review.get("review_summary") or layout_review.get("error"):
+        with st.expander("🪄 Layout-Aware Review", expanded=False):
+            if layout_review.get("error"):
+                st.warning(layout_review["error"])
+            if layout_review.get("review_summary"):
+                st.info(layout_review["review_summary"])
+            for slide in (st.session_state.draft_content or {}).get("slides", []):
+                if slide.get("layout_review_note"):
+                    st.write(
+                        f"Slide {slide.get('slide_number', '?')}: "
+                        f"{slide.get('layout_review_note')}"
+                    )
 
     # Phase 2: Generate PPTX
     st.divider()
@@ -487,11 +527,13 @@ elif st.session_state.current_step == 3:
                 if st.button("🔄 Retry Generation"):
                     st.session_state.generation_result = None
                     st.session_state.slide_plan = None
+                    st.session_state.layout_review_result = None
                     st.rerun()
             with col_back:
                 if st.button("← Back to Edit"):
                     st.session_state.generation_result = None
                     st.session_state.slide_plan = None
+                    st.session_state.layout_review_result = None
                     st.session_state.current_step = 2
                     st.rerun()
 
@@ -589,6 +631,7 @@ elif st.session_state.current_step == 4:
             if st.button("✏️ Edit & Regenerate", use_container_width=True):
                 st.session_state.generation_result = None
                 st.session_state.slide_plan = None
+                st.session_state.layout_review_result = None
                 st.session_state.current_step = 2
                 st.rerun()
 

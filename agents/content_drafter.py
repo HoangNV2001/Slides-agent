@@ -185,3 +185,120 @@ Output ONLY valid JSON with the same structure as the input draft."""
 
     except Exception as e:
         return {**current_draft, "error": f"Refinement failed: {str(e)}"}
+
+
+def review_mapped_draft(
+    current_draft: dict,
+    slide_plan: dict,
+    template_analysis: dict,
+    document_text: str = "",
+    user_feedback: str = "",
+    api_key: Optional[str] = None,
+) -> dict:
+    """
+    Refine drafted slide content after mapping so it better fits the selected
+    template slide layouts and their visual composition.
+    """
+    client = _get_openai_client(api_key)
+
+    source_slides = {
+        slide.get("index"): slide
+        for slide in (template_analysis.get("mapping_slides") or template_analysis.get("slides") or [])
+    }
+
+    mapped_context = []
+    plan_items = slide_plan.get("slide_plan", []) or []
+    for item in plan_items:
+        draft_slide_number = item.get("draft_slide_number")
+        template_index = item.get("source_slide_index")
+        template_slide = source_slides.get(template_index, {})
+        mapped_context.append({
+            "draft_slide_number": draft_slide_number,
+            "source_slide_index": template_index,
+            "layout_reason": item.get("layout_reason", ""),
+            "visual_layout": (template_slide.get("visual_layout") or {}),
+            "simplified_layout": (template_slide.get("simplified_layout") or {}),
+            "has_images": template_slide.get("has_images", False),
+            "has_charts": template_slide.get("has_charts", False),
+            "has_tables": template_slide.get("has_tables", False),
+        })
+
+    system_prompt = """You are a presentation review editor working after slide-to-template mapping.
+You will receive:
+- the current drafted slides
+- the selected template slide for each drafted slide
+- the true visual layout information for those selected template slides
+
+Your job is to refine the draft so each slide actually fits the mapped layout.
+
+Rules:
+1. Keep the same slide count and slide_number values unless the input is malformed.
+2. Preserve the original language exactly. If the content is in Vietnamese, keep full Vietnamese diacritics.
+3. Rewrite conservatively. Improve fit, clarity, and density without changing the presentation's meaning.
+4. Use the mapped visual layout aggressively:
+   - sparse hero/title layouts -> shorter titles, fewer body lines
+   - two-column or comparison layouts -> parallel phrasing and balanced bullet counts
+   - image-led layouts -> keep body concise and let the visual carry more weight
+   - chart/data layouts -> short analytical bullets, not prose blocks
+5. If a slide seems mismatched to its mapped layout, keep the content concise and add a short layout_review_note explaining the risk.
+6. Keep bullet_points and body synchronized. Do not create long paragraphs.
+7. Keep visual_suggestion aligned with the mapped layout's actual visual emphasis.
+8. template_slide_hint should be updated to reflect the mapped layout actually being used.
+9. Avoid typographic punctuation that often breaks JSON formatting, such as smart quotes or em dashes.
+
+Output ONLY valid JSON with this structure:
+{
+  "outline": "updated overview",
+  "slides": [
+    {
+      "slide_number": 1,
+      "slide_type": "title|content|comparison|data|quote|section_divider|closing",
+      "title": "Slide title",
+      "subtitle": "Optional subtitle",
+      "body": "Short body text with \\n separators",
+      "bullet_points": ["Point 1", "Point 2"],
+      "visual_suggestion": "Short visual direction or null",
+      "source_image_ids": ["img_1"],
+      "speaker_notes": "Speaker notes",
+      "template_slide_hint": "Updated mapped layout hint",
+      "layout_review_note": "Short fit note"
+    }
+  ],
+  "review_summary": "Short summary of fit improvements and remaining risks"
+}"""
+
+    document_text = _sanitize_text(document_text or "")
+    user_feedback = _sanitize_text(user_feedback or "")
+    draft_json = json.dumps(current_draft, indent=2, ensure_ascii=False)
+
+    user_message = (
+        "Current Draft:\n"
+        + draft_json
+        + "\n\nMapped Layout Context:\n"
+        + json.dumps(mapped_context, indent=2, ensure_ascii=False)
+        + "\n\nOriginal Document (reference, truncated):\n"
+        + document_text[:6000]
+        + "\n\nAdditional reviewer guidance:\n"
+        + (user_feedback or "None")
+        + "\n\nPlease return the layout-aware revised draft as JSON only."
+    )
+
+    try:
+        response = client.responses.create(
+            model=_get_default_model(),
+            max_output_tokens=4096,
+            instructions=system_prompt,
+            input=user_message,
+        )
+
+        response_text = _extract_output_text(response)
+        response_text = _sanitize_text(response_text)
+        parsed = _parse_json_robust(response_text)
+        if "slides" not in parsed:
+            parsed["slides"] = current_draft.get("slides", [])
+        if "outline" not in parsed:
+            parsed["outline"] = current_draft.get("outline", "")
+        return parsed
+
+    except Exception as e:
+        return {**current_draft, "error": f"Layout-aware review failed: {str(e)}"}
